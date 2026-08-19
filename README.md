@@ -41,11 +41,13 @@ Missing any header returns `401`:
 }
 ```
 
-An invalid credential surfaces as a tool-level error (PRTG returns
-`content=json` errors as either a JSON error field or, for certain
-malformed requests, an XML `<error>` body even on the `.json` endpoint —
-this server passes the raw response text through as-is on any non-2xx
-status).
+An invalid credential surfaces as a tool-level error envelope (see
+[Error envelope](#error-envelope) below), classified from PRTG's HTTP
+status code — a 401/403 maps to `unauthorized`. On any non-2xx response
+this server tries to extract a `message`/`error` field from the JSON body
+and falls back to the raw response text if that body isn't JSON (PRTG can,
+for certain malformed requests, fall back to an XML `<error>` body even on
+the `.json` endpoint).
 
 ## Environment Variables
 
@@ -57,17 +59,35 @@ status).
 ## MCP Endpoint
 
 - `POST /mcp` — MCP protocol (streamable HTTP transport)
-- `GET /health` — health check, returns `{"status": "ok", "service": "prtg-mcp", "transport": "http"}`
+- `GET /health` — health check, returns `{"status": "ok"}` (pure local probe, does not call PRTG)
 
 ## Tool List
 
 | Tool | 功能 | 参数 |
 |---|---|---|
-| `prtg_get_sensors` | 列出所有传感器及其当前状态/数值 | `count`（可选，默认 500） |
-| `prtg_get_devices` | 列出所有受监控设备及其状态/所属 probe/group | `count`（可选，默认 500） |
+| `prtg_get_sensors` | 列出所有传感器及其当前状态/数值 | `count`（可选，默认 50，硬上限 200） |
+| `prtg_get_devices` | 列出所有受监控设备及其状态/所属 probe/group | `count`（可选，默认 50，硬上限 200） |
 | `prtg_get_sensor_historic_data` | 获取指定传感器在某日期范围内的历史监控数据 | `sensor_id`、`start_date`、`end_date`（均必填），`avg`（可选，默认 3600 秒） |
 
-Responses are the vendor's raw JSON, pretty-printed, returned as-is.
+All 3 tools are read-only (`readOnlyHint=True`, `idempotentHint=True`); there are no write/delete tools in this service.
+
+`count` has no documented vendor-side hard maximum for PRTG's `table.json` endpoint, so this server applies the platform's own fallback ceiling instead of passing values through unchecked: default 50, values above 200 are silently clamped down to 200 rather than sent to PRTG as-is.
+
+### Response format
+
+Both endpoints this server calls (`table.json`, `historicdata.json`) are the vendor's JSON-suffixed variants, so on success the client only ever parses JSON. PRTG's HTTP API can in principle return XML for other endpoints/params, so the client parses defensively: a non-2xx response is classified into the structured error envelope below, and if a 2xx response ever fails to parse as JSON its raw text is returned under a `raw_response` key instead of raising.
+
+### Error envelope
+
+Tool errors are returned as a structured JSON string instead of a raised exception, so the calling agent can branch on `code` and decide whether to retry:
+
+```json
+{"error": {"code": "upstream_error", "message": "...", "retryable": true}}
+```
+
+`code` is one of: `not_configured`, `unauthorized`, `not_found`, `invalid_argument`, `rate_limited`, `upstream_error`. Empty result sets are returned as a normal (non-error) empty collection, not as `not_found`.
+
+Tool return values (success and error alike) are compact JSON (`ensure_ascii=False`, no `indent`) capped at 20,000 characters — an oversized result truncates its largest list field and reports `truncated`/`original_count` rather than returning an unbounded blob.
 
 ## 测试示例
 

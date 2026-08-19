@@ -83,6 +83,22 @@ def create_mcp_server(settings: Settings) -> FastMCP:
     # correctly behind a reverse proxy or docker network.
     mcp = FastMCP(
         name="prtg-mcp",
+        instructions=(
+            "PRTG Network Monitor (Paessler) is a network/infrastructure "
+            "monitoring platform: it watches devices (servers, switches, "
+            "routers, endpoints) via sensors (small checks like ping, "
+            "bandwidth, disk space, HTTP) and tracks each sensor's current "
+            "status/value plus uptime/downtime history. Use this server for "
+            "monitoring and availability questions — is something down, what "
+            "is its current reading, how has it behaved over time. Typical "
+            "flow: prtg_get_devices to see what's monitored and its "
+            "probe/group placement, prtg_get_sensors to see the sensors on "
+            "those devices and their current status/value, then "
+            "prtg_get_sensor_historic_data(sensor_id=...) for a trend or "
+            "outage window on one specific sensor found above. All 3 tools "
+            "are read-only queries; there are no write/delete tools in this "
+            "service."
+        ),
         transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
     )
 
